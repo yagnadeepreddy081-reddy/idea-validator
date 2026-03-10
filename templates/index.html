@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Idea Validator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-100">
+    <div class="mx-auto flex min-h-screen max-w-4xl flex-col px-4 py-8">
+      <header class="mb-6">
+        <div class="flex items-center justify-between gap-4">
+          <div>
+            <h1 class="text-2xl font-semibold tracking-tight">Idea Validator</h1>
+            <p class="mt-1 text-sm text-slate-300">
+              Pitch your startup idea. Get a harsh-but-fair investor critique—exactly 3 points.
+            </p>
+          </div>
+          <span class="rounded-full border border-slate-800 bg-slate-900/60 px-3 py-1 text-xs text-slate-300">
+            Gemini Investor
+          </span>
+        </div>
+      </header>
+
+      <main class="flex-1">
+        <div
+          id="chat"
+          class="h-[66vh] overflow-y-auto rounded-2xl border border-slate-800 bg-slate-900/40 p-4 shadow-lg shadow-black/20"
+        >
+          <div class="flex items-start gap-3">
+            <div class="mt-0.5 h-9 w-9 shrink-0 rounded-xl bg-slate-800 ring-1 ring-slate-700"></div>
+            <div class="max-w-[85%] rounded-2xl bg-slate-800/70 px-4 py-3 text-sm leading-relaxed text-slate-100 ring-1 ring-slate-700">
+              Paste your idea below. I’ll evaluate it like a Silicon Valley investor and give you <span class="font-semibold">3</span> constructive critique points.
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer class="mt-4">
+        <form id="composer" class="flex gap-3">
+          <div class="flex-1">
+            <label for="idea" class="sr-only">Your idea</label>
+            <input
+              id="idea"
+              name="idea"
+              type="text"
+              autocomplete="off"
+              placeholder="e.g., An AI tool that validates startup ideas in 60 seconds..."
+              class="w-full rounded-2xl border border-slate-800 bg-slate-900/60 px-4 py-3 text-sm text-slate-100 placeholder:text-slate-400 outline-none ring-0 transition focus:border-slate-600"
+            />
+            <p class="mt-2 text-xs text-slate-400">
+              Tip: include target user, pain point, wedge, pricing, and distribution.
+            </p>
+          </div>
+          <button
+            id="send"
+            type="submit"
+            class="inline-flex h-[46px] items-center justify-center rounded-2xl bg-indigo-500 px-5 text-sm font-medium text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            Send
+          </button>
+        </form>
+      </footer>
+    </div>
+
+    <script>
+      const chat = document.getElementById("chat");
+      const form = document.getElementById("composer");
+      const input = document.getElementById("idea");
+      const sendBtn = document.getElementById("send");
+
+      function scrollToBottom() {
+        chat.scrollTop = chat.scrollHeight;
+      }
+
+      function addBubble({ role, html }) {
+        const row = document.createElement("div");
+        row.className =
+          role === "user"
+            ? "mt-4 flex justify-end"
+            : "mt-4 flex items-start gap-3";
+
+        if (role === "user") {
+          row.innerHTML = `
+            <div class="max-w-[85%] rounded-2xl bg-indigo-500/20 px-4 py-3 text-sm leading-relaxed text-slate-100 ring-1 ring-indigo-400/30">
+              ${html}
+            </div>
+          `;
+        } else {
+          row.innerHTML = `
+            <div class="mt-0.5 h-9 w-9 shrink-0 rounded-xl bg-slate-800 ring-1 ring-slate-700"></div>
+            <div class="max-w-[85%] rounded-2xl bg-slate-800/70 px-4 py-3 text-sm leading-relaxed text-slate-100 ring-1 ring-slate-700">
+              ${html}
+            </div>
+          `;
+        }
+
+        chat.appendChild(row);
+        scrollToBottom();
+        return row;
+      }
+
+      function escapeHtml(str) {
+        return String(str)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#039;");
+      }
+
+      function formatCritique(points) {
+        const safe = (points || []).slice(0, 3).map((p) => escapeHtml(p));
+        const filled = safe.length === 3 ? safe : safe.concat(Array(3 - safe.length).fill("Missing critique point."));
+        return `
+          <div class="font-semibold">Investor critique (3 points)</div>
+          <ol class="mt-2 list-decimal space-y-2 pl-5">
+            <li>${filled[0]}</li>
+            <li>${filled[1]}</li>
+            <li>${filled[2]}</li>
+          </ol>
+        `;
+      }
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const idea = input.value.trim();
+        if (!idea) return;
+
+        input.value = "";
+        input.focus();
+
+        addBubble({ role: "user", html: escapeHtml(idea) });
+
+        sendBtn.disabled = true;
+        const thinkingRow = addBubble({
+          role: "ai",
+          html: `<div class="text-slate-300">Evaluating…</div>`,
+        });
+
+        try {
+          const res = await fetch("/api/validate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ idea }),
+          });
+          const data = await res.json().catch(() => ({}));
+
+          if (!res.ok) {
+            const msg = data && data.error ? data.error : "Request failed.";
+            thinkingRow.querySelector("div:last-child").innerHTML = `<div class="text-rose-300">${escapeHtml(msg)}</div>`;
+            return;
+          }
+
+          thinkingRow.querySelector("div:last-child").innerHTML = formatCritique(data.critique);
+        } catch (err) {
+          thinkingRow.querySelector("div:last-child").innerHTML =
+            `<div class="text-rose-300">${escapeHtml(err?.message || "Network error.")}</div>`;
+        } finally {
+          sendBtn.disabled = false;
+          scrollToBottom();
+        }
+      });
+    </script>
+  </body>
+</html>
