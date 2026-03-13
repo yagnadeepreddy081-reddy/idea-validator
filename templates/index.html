@@ -70,10 +70,16 @@
       const sendBtn = document.getElementById("send");
 
       function scrollToBottom() {
-        chat.scrollTop = chat.scrollHeight;
+        // Ensure we scroll after DOM layout/paint.
+        requestAnimationFrame(() => {
+          chat.scrollTop = chat.scrollHeight;
+          requestAnimationFrame(() => {
+            chat.scrollTop = chat.scrollHeight;
+          });
+        });
       }
 
-      function addBubble({ role, html }) {
+      function addBubble({ role, html, fadeIn = false }) {
         const row = document.createElement("div");
         row.className =
           role === "user"
@@ -95,6 +101,31 @@
           `;
         }
 
+        if (fadeIn) {
+          row.classList.add("opacity-0", "translate-y-1", "transition", "duration-300", "ease-out");
+        }
+
+        chat.appendChild(row);
+        scrollToBottom();
+
+        if (fadeIn) {
+          requestAnimationFrame(() => {
+            row.classList.remove("opacity-0", "translate-y-1");
+          });
+        }
+
+        return row;
+      }
+
+      function addLoadingBubble() {
+        const row = document.createElement("div");
+        row.className = "mt-4 flex items-start gap-3";
+        row.innerHTML = `
+          <div class="mt-0.5 h-9 w-9 shrink-0 rounded-xl bg-slate-800 ring-1 ring-slate-700"></div>
+          <div class="max-w-[85%] rounded-2xl bg-slate-800/70 px-4 py-3 text-sm leading-relaxed text-slate-200 ring-1 ring-slate-700 animate-pulse">
+            Investor is reviewing...
+          </div>
+        `;
         chat.appendChild(row);
         scrollToBottom();
         return row;
@@ -133,10 +164,7 @@
         addBubble({ role: "user", html: escapeHtml(idea) });
 
         sendBtn.disabled = true;
-        const thinkingRow = addBubble({
-          role: "ai",
-          html: `<div class="text-slate-300">Evaluating…</div>`,
-        });
+        const loadingRow = addLoadingBubble();
 
         try {
           const res = await fetch("/api/validate", {
@@ -148,14 +176,28 @@
 
           if (!res.ok) {
             const msg = data && data.error ? data.error : "Request failed.";
-            thinkingRow.querySelector("div:last-child").innerHTML = `<div class="text-rose-300">${escapeHtml(msg)}</div>`;
+            loadingRow.remove();
+            addBubble({
+              role: "ai",
+              html: `<div class="text-rose-300">${escapeHtml(msg)}</div>`,
+              fadeIn: true,
+            });
             return;
           }
 
-          thinkingRow.querySelector("div:last-child").innerHTML = formatCritique(data.critique);
+          loadingRow.remove();
+          addBubble({
+            role: "ai",
+            html: formatCritique(data.critique),
+            fadeIn: true,
+          });
         } catch (err) {
-          thinkingRow.querySelector("div:last-child").innerHTML =
-            `<div class="text-rose-300">${escapeHtml(err?.message || "Network error.")}</div>`;
+          loadingRow.remove();
+          addBubble({
+            role: "ai",
+            html: `<div class="text-rose-300">${escapeHtml(err?.message || "Network error.")}</div>`,
+            fadeIn: true,
+          });
         } finally {
           sendBtn.disabled = false;
           scrollToBottom();
